@@ -1,0 +1,8 @@
+---
+     http_port: 80
+     domain: damilola-apedokay.xyz
+     repository_link: https://github.com/f1amy/laravel-realworld-example-app.git
+     db_user: alt_school
+     db_password: dami@1903Hm
+     db_name: alt-exams
+     project_repository: /var/www/damilola

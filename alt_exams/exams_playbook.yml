@@ -1,0 +1,251 @@
+
+---
+ - name: AltSchool exams
+   hosts: all
+   remote_user: root
+   vars_files:
+   - variable.yml
+
+
+   tasks:
+#Update ubuntu and install software properties
+   - name: update ubuntu
+     command: sudo apt update
+
+   - name: Install All packages
+     become: true
+     apt:
+       name: "{{ item }}"
+       state: latest
+     with_items:
+       - software-properties-common
+       - apache2
+       - git
+       - ufw
+       - snapd
+       
+#Set timezone and hostname to Lagos/Africa
+   - name: Set timezone to Africa/Lagos
+     timezone:
+       name: Africa/Lagos
+
+   - name: Set a hostname
+     ansible.builtin.hostname:
+         name: server.damilola-apedokay.xyz
+
+#Enable and start apache
+   - name: enable apache
+     command: sudo  systemctl enable apache2
+
+   - name: status apache
+     command: sudo systemctl status apache2
+
+   - name: start apache
+     command: sudo systemctl start apache2
+
+
+#Enabling apache modules
+   - name: enabled mod_rewrite
+     apache2_module: name=rewrite state=present
+     notify:
+       - Restart apache2
+
+#Bisable default apache site
+   - name: Disable default Apache site
+     command: a2dissite 000-default.conf
+     notify:
+     - Restart apache2
+
+#Create virtual host 
+   - name: create virtual host file
+     template: src=dami_virtualhost.conf dest=/etc/apache2/sites-available/{{ domain }}.conf
+
+   - name: Enabling virtual host
+     command: a2ensite "{{ domain }}".conf
+     args:
+        creates: /etc/apache2/sites-enabled/"{{ domain }}".conf
+     notify:
+     - Restart apache2
+
+#Setting up firewall 
+   - name: Enable UFW
+     ufw:
+        state: enabled
+
+   - name: Ufw allow HTTP
+     ufw:
+       rule: allow
+       name: Apache Full
+     notify:
+     - Reload ufw
+
+   - name: Ufw allow Openssh
+     ufw:
+        rule: allow
+        name: OpenSSH
+     notify:
+     - Reload ufw
+
+
+#php8.1 installation
+
+   - name: Adding ppa repository for php
+     ansible.builtin.apt_repository:
+       repo: ppa:ondrej/php
+
+   - name: Run ubuntu update
+     command: sudo apt update
+
+   - name: Install php
+     apt: name=php8.1 update_cache=yes state=latest
+
+   - name: Install PHP, MYSQL and Composer packages
+     become: true
+     apt:
+       name: "{{ item }}"
+       state: latest
+     with_items:
+       - php8.1-cli
+       - php8.1-curl
+       - php8.1-fpm
+       - php8.1-intl
+       - php8.1-mysql
+       - mysql-server
+       - mysql-client
+       - python3-mysqldb
+       - libmysqlclient-dev
+       - zip
+       - unzip
+       - php8.1-xml
+       - php8.1-mbstring
+
+   - name: check php version
+     command: php -v
+
+#SettingUp mysql packages
+   - name: Start mysql service
+     service:
+       name: mysql
+       state: started
+       enabled: yes
+
+   - name: Creating mysql user
+     mysql_user:
+       name: "{{db_user}}"
+       password: "{{db_password}}"
+       priv: '*.*:ALL'
+       host: '%'
+       state: present
+
+   - name: creating the database
+     mysql_db:
+       name: "{{db_name}}"
+       state: present
+
+   - name: Enable remote login to mysql
+     lineinfile:
+        path: /etc/mysql/mysql.conf.d/mysqld.cnf
+        regexp: '^bind-address'
+        line: 'bind-address = 0.0.0.0'
+        backup: yes
+     notify:
+        - Restart mysql
+
+#installing Composer
+   - name: Composer download
+     become: yes
+     shell: |
+         curl -sS https://getcomposer.org/installer -o composer-setup.php     
+         sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+
+   - name: Set permissions on Composer
+     become: true
+     file:
+       path: /usr/local/bin/composer
+       mode: "a+x"
+
+#cloning the laravel demo project
+   - name: Clone the project github repository
+     git:
+      repo: "{{ repository_link}}"
+      dest: /var/www/damilola
+      clone: yes
+      update: yes
+
+
+#creating .env 
+   - name: creating .env file
+     command: cp /var/www/damilola/.env.example /var/www/damilola/.env
+
+#changing permissions and ownership
+   - name: Changing permissions and ownership of laravel project
+     command: sudo chmod -R 775 "{{ project_repository }}"
+
+   - name: Changing permissions and ownership of laravel project
+     command: sudo chown -R www-data:www-data "{{ project_repository }}"
+
+   - name: Create .htaccess file
+     template: src=.htaccess dest=/var/www/damilola/.htaccess
+
+   - name: Composer install
+     community.general.composer:
+       command: install 
+       working_dir: /var/www/damilola
+     environment: 
+        COMPOSER_ALLOW_SUPERUSER: 1
+
+   - name: Composer update
+     community.general.composer:
+       command: update       
+       working_dir: /var/www/damilola
+     environment:
+        COMPOSER_ALLOW_SUPERUSER: 1
+
+   - name: Composer create project
+     community.general.composer:
+       command: create-project              
+       working_dir: /var/www/damilola
+     environment:
+        COMPOSER_ALLOW_SUPERUSER: 1
+
+#editing .env to database credentials
+   - name: set DB_DATABASE
+     lineinfile: dest={{ project_repository }}/.env regexp='^DB_DATABASE=' line=DB_DATABASE={{ db_name }}
+
+   - name: set DB_HOST
+     lineinfile: dest={{ project_repository }}/.env regexp='^DB_HOST=' line=DB_HOST=localhost
+
+   - name: set DB_PORT
+     lineinfile: dest={{ project_repository }}/.env regexp='^DB_PORT=' line=DB_PORT=3306
+
+   - name: set DB_USERNAME
+     lineinfile: dest={{ project_repository }}/.env regexp='^DB_USERNAME=' line=DB_USERNAME={{ db_user }}
+
+   - name: set DB_PASSWORD
+     lineinfile: dest={{ project_repository }}/.env regexp='^DB_PASSWORD=' line=DB_PASSWORD={{ db_password }}
+
+   - name: set DB_CONNECTION
+     lineinfile: dest={{ project_repository }}/.env regexp='^DB_CONNECTION=' line=DB_CONNECTION=mysql
+
+#certbot
+   - name: Obtaining certbot certificate
+     ansible.builtin.shell: |
+       snap install core
+       snap refresh core
+       snap install --classic certbot
+       ln -s /snap/bin/certbot /usr/bin/certbot
+       yes | certbot --apache --agree-tos --redirect -m apedokay@gmail.com -d damilola-apedokay.xyz  -d www.damilola-apedokay.xyz
+     become: yes
+
+
+#handlers
+   handlers:
+     - name: Restart apache2
+       service: name=apache2 state=restarted
+
+     - name: Reload ufw
+       service: name=ufw state=reloaded
+
+     - name: Restart mysql
+       service: name=mysql state=restarted
+
