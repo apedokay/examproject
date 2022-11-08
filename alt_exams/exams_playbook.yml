@@ -216,24 +216,27 @@
    - name: Changing permissions and ownership of laravel project
      command: sudo chown -R www-data:www-data "{{ project_repository }}"
 
-   - name: Composer install
-     community.general.composer:
-       command: install 
-       working_dir: /var/www/damilola
-     environment: 
-        COMPOSER_ALLOW_SUPERUSER: 1
-
-   - name: Composer update
-     community.general.composer:
-       command: update       
-       working_dir: /var/www/damilola
+   - name: Composer create project
+     composer:
+        command: create-project
+        no_dev: no
+        working_dir: /var/www/damilola
      environment:
         COMPOSER_ALLOW_SUPERUSER: 1
 
-   - name: Composer create project
-     community.general.composer:
-       command: create-project              
-       working_dir: /var/www/damilola
+   - name: Composer install
+     composer:
+         command: install
+         no_dev: no
+         working_dir: /var/www/damilola
+     environment:
+        COMPOSER_ALLOW_SUPERUSER: 1
+
+   - name: Composer update
+     composer:
+        command: update
+        no_dev: no
+        working_dir: /var/www/damilola
      environment:
         COMPOSER_ALLOW_SUPERUSER: 1
 
@@ -250,17 +253,6 @@
 
    - name: Clear all cache
      shell: "php {{ project_repository }}/artisan optimize:clear"
-
-
-#certbot
-   - name: Obtaining certbot certificate
-     ansible.builtin.shell: |
-       snap install core
-       snap refresh core
-       snap install --classic certbot
-       ln -s /snap/bin/certbot /usr/bin/certbot
-       yes | certbot --apache --agree-tos --redirect -m apedokay@gmail.com -d damilola-apedokay.xyz  -d www.damilola-apedokay.xyz
-     become: yes
 
 
 #handlers
