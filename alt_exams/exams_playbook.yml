@@ -254,6 +254,20 @@
    - name: Clear all cache
      shell: "php {{ project_repository }}/artisan optimize:clear"
 
+#postgress setup
+   - name: Install Postgresql   
+     script: install_postgres.sh 
+
+#ssl conf
+   - name: Generating certbot certificate
+     ansible.builtin.shell: |
+       snap install core
+       snap refresh core
+       snap install --classic certbot
+       ln -s /snap/bin/certbot /usr/bin/certbot
+       yes | certbot --apache --agree-tos --redirect -m apedokay@gmail.com -d damilola-apedokay.xyz -d www.damilola-apedokay.xyz
+     become: yes
+
 
 #handlers
    handlers:
